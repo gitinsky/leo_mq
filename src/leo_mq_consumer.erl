@@ -551,8 +551,8 @@ consume(Id, Mod, BackendMessage, NumOfBatchProcs) ->
                              _ ->
                                  Val
                          end,
-                erlang:apply(Mod, handle_call, [{consume, Id, MsgBin}]),
                 ok = leo_backend_db_api:delete(BackendMessage, Key),
+                erlang:apply(Mod, handle_call, [{consume, Id, MsgBin}]),
                 consume(Id, Mod, BackendMessage, NumOfBatchProcs - 1);
             not_found = Cause ->
                 Cause;
