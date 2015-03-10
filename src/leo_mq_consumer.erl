@@ -230,6 +230,7 @@ idling(#event_info{event = ?EVENT_RUN}, From, #state{id = Id,
     State_1 = State#state{status = NextStatus,
                           start_datetime = leo_date:now()},
     gen_fsm:reply(From, ok),
+    statsd:leo_increment("mq_consumer.callrun.fromidling1"),
     ok = run(Id),
     ok = leo_mq_publisher:update_consumer_stats(PublisherId, NextStatus, BatchOfMsgs, Interval),
     {next_state, NextStatus, State_1};
@@ -253,6 +254,7 @@ idling(#event_info{event = ?EVENT_RUN}, #state{id = Id,
                                                interval = Interval} = State) ->
     statsd:leo_increment("mq_consumer.idling.next_running.2"),
     NextStatus = ?ST_RUNNING,
+    statsd:leo_increment("mq_consumer.callrun.fromidling2"),
     ok = run(Id),
     ok = leo_mq_publisher:update_consumer_stats(PublisherId, NextStatus, BatchOfMsgs, Interval),
     {next_state, NextStatus, State#state{status = NextStatus}};
@@ -309,6 +311,7 @@ running(#event_info{event = ?EVENT_RUN}, #state{id = Id,
             ok ->
                 %% Set interval
                 Time = interval(Interval, erlang:round(Interval * 1.2)),
+                statsd:leo_increment("mq_consumer.callrun.fromrunning1"),
                 timer:apply_after(Time, ?MODULE, run, [Id]),
                 {?ST_RUNNING,  State};
             %% Reached end of the object-container
@@ -350,6 +353,7 @@ running(#event_info{event = ?EVENT_INCR_WT},
             true ->
                 {?ST_SUSPENDING, MaxInterval};
             false ->
+                statsd:leo_increment("mq_consumer.callrun.fromrunning3"),
                 ok = run(Id),
                 {?ST_RUNNING,
                  incr_interval_fun(Interval, MaxInterval, StepInterval)}
@@ -368,6 +372,7 @@ running(#event_info{event = ?EVENT_DECR_WT},
     statsd:leo_increment("mq_consumer.running.4"),
     Interval_1 = decr_interval_fun(Interval, MinInterval, StepInterval),
     NextStatus = ?ST_RUNNING,
+    statsd:leo_increment("mq_consumer.callrun.fromrunning4"),
     ok = run(Id),
     ok = leo_mq_publisher:update_consumer_stats(PublisherId, NextStatus, BatchOfMsgs, Interval_1),
     {next_state, NextStatus, State#state{status = NextStatus,
@@ -384,6 +389,7 @@ running(#event_info{event = ?EVENT_INCR_BP},
     BatchOfMsgs_1 =
         incr_batch_procs_fun(BatchOfMsgs, MaxBatchOfMsgs, StepBatchOfMsgs),
     NextStatus = ?ST_RUNNING,
+    statsd:leo_increment("mq_consumer.callrun.fromrunning5"),
     ok = run(Id),
     ok = leo_mq_publisher:update_consumer_stats(PublisherId, NextStatus, BatchOfMsgs_1, Interval),
     {next_state, NextStatus, State#state{batch_of_msgs = BatchOfMsgs_1,
@@ -404,6 +410,7 @@ running(#event_info{event = ?EVENT_DECR_BP},
             true ->
                 {?ST_SUSPENDING, MinBatchOfMsgs};
             false ->
+                statsd:leo_increment("mq_consumer.callrun.fromrunning6"),
                 ok = run(Id),
                 {?ST_RUNNING,
                  decr_batch_procs_fun(BatchOfMsgs, MinBatchOfMsgs, StepBatchOfMsgs)}
@@ -455,6 +462,7 @@ suspending(#event_info{event = ?EVENT_DECR_WT},
                   interval = Interval} = State) ->
     statsd:leo_increment("mq_consumer.suspending.3"),
     Interval_1 = decr_interval_fun(Interval, MinInterval, StepInterval),
+    statsd:leo_increment("mq_consumer.callrun.fromsuspending3"),
     timer:apply_after(timer:seconds(1), ?MODULE, run, [Id]),
 
     NextStatus = ?ST_RUNNING,
@@ -471,6 +479,7 @@ suspending(#event_info{event = ?EVENT_INCR_BP},
     statsd:leo_increment("mq_consumer.suspending.4"),
     BatchOfMsgs_1 = incr_batch_procs_fun(BatchOfMsgs, MaxBatchOfMsgs, StepBatchOfMsgs),
     NextStatus = ?ST_RUNNING,
+    statsd:leo_increment("mq_consumer.callrun.fromsuspending4"),
     timer:apply_after(timer:seconds(1), ?MODULE, run, [Id]),
     ok = leo_mq_publisher:update_consumer_stats(PublisherId, NextStatus, BatchOfMsgs_1, Interval),
     {next_state, NextStatus, State#state{status = NextStatus,
@@ -491,6 +500,7 @@ suspending(#event_info{event = ?EVENT_RESUME}, From, #state{id = Id,
     statsd:leo_increment("mq_consumer.suspending.6"),
     gen_fsm:reply(From, ok),
     NextStatus = ?ST_RUNNING,
+    statsd:leo_increment("mq_consumer.callrun.fromsuspending6"),
     ok = run(Id),
     ok = leo_mq_publisher:update_consumer_stats(PublisherId, NextStatus, BatchOfMsgs, Interval),
     {next_state, NextStatus, State#state{status = NextStatus}};
@@ -576,6 +586,7 @@ consume(Id, Mod, BackendMessage, NumOfBatchProcs) ->
 defer_consume(Id, MaxInterval, MinInterval) ->
     statsd:leo_increment("mq_consumer.defer_consume"),
     Time = interval(MinInterval, MaxInterval),
+    statsd:leo_increment("mq_consumer.callrun.fromdeferconsume"),
     timer:apply_after(Time, ?MODULE, run, [Id]).
 
 
