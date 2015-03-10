@@ -562,15 +562,19 @@ consume(Id, Mod, BackendMessage, NumOfBatchProcs) ->
                                  Val
                          end,
                 ok = leo_backend_db_api:delete(BackendMessage, Key),
+                statsd:leo_increment("mq_consumer.consume3.do_handle_call"),
                 erlang:apply(Mod, handle_call, [{consume, Id, MsgBin}]),
                 consume(Id, Mod, BackendMessage, NumOfBatchProcs - 1);
             not_found = Cause ->
+                statsd:leo_increment("mq_consumer.consume3.not_found"),
                 Cause;
             Error ->
+                statsd:leo_increment("mq_consumer.consume3.error"),
                 Error
         end
     catch
         _: Why ->
+            statsd:leo_increment("mq_consumer.consume3.exception"),
             error_logger:error_msg("~p,~p,~p,~p~n",
                                    [{module, ?MODULE_STRING},
                                     {function, "consume_fun/5"},
