@@ -548,9 +548,9 @@ consume(_Id,_,_,0) ->
     ok;
 consume(Id, Mod, BackendMessage, NumOfBatchProcs) ->
     statsd:leo_increment("mq_consumer.consume.3"),
-    try
-        case leo_backend_db_api:first(BackendMessage) of
-            {ok, {Key, Val}} ->
+    case catch leo_backend_db_api:first(BackendMessage) of
+        {ok, {Key, Val}} ->
+            try
                 %% Taking measure of queue-msg migration
                 %% for previsous 1.2.0-pre1
                 MsgTerm = binary_to_term(Val),
@@ -561,25 +561,38 @@ consume(Id, Mod, BackendMessage, NumOfBatchProcs) ->
                              _ ->
                                  Val
                          end,
-                ok = leo_backend_db_api:delete(BackendMessage, Key),
                 statsd:leo_increment("mq_consumer.consume3.do_handle_call"),
                 erlang:apply(Mod, handle_call, [{consume, Id, MsgBin}]),
-                consume(Id, Mod, BackendMessage, NumOfBatchProcs - 1);
-            not_found = Cause ->
-                statsd:leo_increment("mq_consumer.consume3.not_found"),
-                Cause;
-            Error ->
-                statsd:leo_increment("mq_consumer.consume3.error"),
-                Error
-        end
-    catch
-        _: Why ->
-            statsd:leo_increment("mq_consumer.consume3.exception"),
-            error_logger:error_msg("~p,~p,~p,~p~n",
-                                   [{module, ?MODULE_STRING},
-                                    {function, "consume_fun/5"},
-                                    {line, ?LINE}, {body, Why}]),
-            {error, Why}
+                ok
+            catch
+                _:Reason ->
+                    statsd:leo_increment("mq_consumer.consume3.exception"),
+                    error_logger:error_msg("~p,~p,~p,~p~n",
+                                           [{module, ?MODULE_STRING},
+                                            {function, "consume/4"},
+                                            {line, ?LINE}, {body, Reason}])
+            after
+                %% Remove the message
+                %% and then retrieve the next message
+                case catch leo_backend_db_api:delete(BackendMessage, Key) of
+                    ok ->
+                        ok;
+                    {_, Why} ->
+                        error_logger:error_msg("~p,~p,~p,~p~n",
+                                               [{module, ?MODULE_STRING},
+                                                {function, "consume/4"},
+                                                {line, ?LINE}, {body, Why}])
+                end,
+                consume(Id, Mod, BackendMessage, NumOfBatchProcs - 1)
+            end;
+        not_found = Cause ->
+            statsd:leo_increment("mq_consumer.consume3.not_found"),
+            Cause;
+        {'EXIT', Cause} ->
+            {error, Cause};
+        Error ->
+            statsd:leo_increment("mq_consumer.consume3.error"),
+            Error
     end.
 
 
